@@ -36,4 +36,5 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            echo "Deploying application..."
+            cd sample-projects/automatic-bassoon
+            scripts/./deploy.sh
