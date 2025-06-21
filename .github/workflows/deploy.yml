@@ -43,7 +43,7 @@ jobs:
 
   deploy-to-staging:
     if: github.event_name == 'workflow_dispatch'
-    needs: build-and-test
+    needs: build
     runs-on: ubuntu-latest
     environment: Staging
 
