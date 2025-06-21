@@ -6,10 +6,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: ["main"]
-  workflow_dispatch: # manual trigger for staging
+  workflow_dispatch:
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -60,7 +60,7 @@ jobs:
 
   deploy-to-production:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build-and-test
+    needs: build
     runs-on: ubuntu-latest
     environment: Production
 
