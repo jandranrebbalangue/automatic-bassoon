@@ -1,2 +1,6 @@
 #!/usr/bin/env bash
-echo "Deployed Staging"
+docker compose -f docker-compose.yml up -d --build --force-recreate node-app
+
+docker image prune -f
+
+docker builder prune -f
