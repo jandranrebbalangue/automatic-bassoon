@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "feature/**", "bugfix/**", "hotfix/**"]
   pull_request:
     types: [opened, synchronize, reopened]
     branches: ["main"]
