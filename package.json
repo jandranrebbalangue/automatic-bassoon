@@ -1,13 +1,17 @@
 {
-  "name": "automatic-bassoon",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.mjs",
-  "scripts": {
-    "dev": "node index.mjs"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.11.0"
+	"name": "automatic-bassoon",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.mjs",
+	"scripts": {
+		"dev": "node index.mjs",
+		"test": "vitest"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"packageManager": "pnpm@10.11.0",
+	"devDependencies": {
+		"vitest": "^3.2.4"
+	}
 }

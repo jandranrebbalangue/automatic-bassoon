@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -40,10 +40,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install
+      - name: Test
+        run: pnpm test
 
   deploy-to-staging:
     if: github.event_name == 'workflow_dispatch'
-    needs: build
+    needs: build-and-test
     runs-on: ubuntu-latest
     environment: Staging
 
@@ -60,7 +62,7 @@ jobs:
 
   deploy-to-production:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    needs: build-and-test
     runs-on: ubuntu-latest
     environment: Production
 
