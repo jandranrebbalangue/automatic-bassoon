@@ -40,7 +40,7 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install
-      - name: Test
+      - name: Run Test
         run: pnpm test
 
   deploy-to-staging:
@@ -58,7 +58,7 @@ jobs:
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
             cd sample-projects/automatic-bassoon
-            ./scripts/deploy-staging.sh
+            ./scripts/deploy-staging.sh ${{ github.event.pull_request.head.ref || github.ref_name }}
 
   deploy-to-production:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
