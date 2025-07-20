@@ -1,4 +1,4 @@
-FROM node:22.16.0
+FROM node:22.17.1
 
 RUN npm install -g pnpm
 
