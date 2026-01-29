@@ -8,9 +8,10 @@ jobs:
     review:
         runs-on: ubuntu-latest
         permissions:
+            id-token: write
             contents: read
-            pull-requests: read
-            issues: read
+            pull-requests: write
+            issues: write
 
         steps:
             - uses: actions/checkout@v6
@@ -25,9 +26,7 @@ jobs:
                   model: openai/gpt-5.2
                   use_github_token: true
                   prompt: |
-                      Review this pull request as a senior software engineer:
-                        - Identify concrete bugs or edge cases
-                        - Call out performance or security concerns
-                        - Suggest specific code-level improvements
-                        - Avoid generic advice
-                        - Be concise and to the point
+                      Review this pull request:
+                      - Check for code quality issues
+                      - Look for potential bugs
+                      - Suggest improvements
