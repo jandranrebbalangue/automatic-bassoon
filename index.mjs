@@ -1,12 +1,11 @@
 import { createServer } from "node:http";
 
 const server = createServer((req, res) => {
+  const url = new URL(req.url ?? "/", "http://localhost");
   if (process.env.DEBUG_REQUESTS === "1") {
-    console.log("request", { method: req.method, url: req.url ?? "/" });
+    console.log("request", { method: req.method, path: url.pathname });
   }
   res.writeHead(200, { "Content-Type": "text/plain" });
-  const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-  console.log(`Received request for ${pathname}`);
 
   res.end("Hello World!\n");
 });
