@@ -1,7 +1,6 @@
 import { createServer } from "node:http";
 
 const server = createServer((req, res) => {
-  const url = new URL(req.url ?? "/", "http://localhost");
   if (process.env.DEBUG_REQUESTS === "1") {
     let path = req.url ?? "/";
     try {
@@ -9,8 +8,8 @@ const server = createServer((req, res) => {
     } catch {}
     console.log("request", { method: req.method, path });
   }
-  res.writeHead(200, { "Content-Type": "text/plain" });
 
+  res.writeHead(200, { "Content-Type": "text/plain" });
   res.end("Hello World!\n");
 });
 
