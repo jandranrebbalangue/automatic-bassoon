@@ -1,0 +1,33 @@
+name: opencode-review
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+    review:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            pull-requests: read
+            issues: read
+
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+
+            - uses: anomalyco/opencode/github@latest
+              env:
+                  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  model: openai/gpt-5.2
+                  use_github_token: true
+                  prompt: |
+                      Review this pull request as a senior software engineer:
+                        - Identify concrete bugs or edge cases
+                        - Call out performance or security concerns
+                        - Suggest specific code-level improvements
+                        - Avoid generic advice
+                        - Be concise and to the point
