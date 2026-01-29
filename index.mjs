@@ -1,13 +1,10 @@
 import { createServer } from "node:http";
 
 const server = createServer((req, res) => {
-  if (process.env.DEBUG_REQUESTS === "1") {
-    let path = req.url ?? "/";
-    try {
-      path = new URL(path, "http://localhost").pathname;
-    } catch {}
-    console.log("request", { method: req.method, path });
-  }
+ if (process.env.DEBUG_REQUESTS === "1") {
+	const path = (req.url ?? "/").split("?", 1)[0];
+	console.log("request", { method: req.method, path });
+}
 
   res.writeHead(200, { "Content-Type": "text/plain" });
   res.end("Hello World!\n");
