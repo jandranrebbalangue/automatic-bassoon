@@ -6,22 +6,34 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 10_000;
 const RESPONSE_TIMEOUT_MS = 10_000;
 const DEMO_PASSWORD_HASH = "$2b$10$aS8QSU5vNDxVb3evy75RMekzrTz8G5IHBxge8lcVfH0F7EDVyNEaG";
+const ENABLE_DEMO_USER = process.env.NODE_ENV !== "production";
 
-const USERS = new Map([
-  [
-    "demo",
-    {
-      username: "demo",
-      passwordHash: DEMO_PASSWORD_HASH,
-    },
-  ],
-]);
+const USERS = new Map(
+  ENABLE_DEMO_USER
+    ? [
+        [
+          "demo",
+          {
+            username: "demo",
+            passwordHash: DEMO_PASSWORD_HASH,
+          },
+        ],
+      ]
+    : []
+);
 
 class HttpError extends Error {
   constructor(status, body, message) {
     super(message ?? body?.error ?? "Request failed");
     this.status = status;
     this.body = body;
+  }
+}
+
+class RequestAbortedError extends Error {
+  constructor() {
+    super("Request aborted");
+    this.code = "ERR_REQUEST_ABORTED";
   }
 }
 
@@ -42,7 +54,7 @@ function sendJson(res, status, body, headers = {}) {
 }
 
 function sendJsonAndClose(req, res, status, body) {
-  if (res.writableFinished) {
+  if (res.writableFinished || res.headersSent) {
     req.socket.destroy();
     return;
   }
@@ -65,11 +77,6 @@ function readBody(req, { maxBytes = MAX_BODY_BYTES } = {}) {
     let body = "";
     let size = 0;
     let aborted = false;
-    const onAborted = () => {
-      aborted = true;
-      cleanup();
-      reject(new Error("Request aborted"));
-    };
     const cleanup = () => {
       req.off("data", onData);
       req.off("end", onEnd);
@@ -108,7 +115,11 @@ function readBody(req, { maxBytes = MAX_BODY_BYTES } = {}) {
       reject(error);
     };
 
-
+    const onAborted = () => {
+      aborted = true;
+      cleanup();
+      reject(new RequestAbortedError());
+    };
 
     req.on("data", onData);
     req.on("end", onEnd);
@@ -162,9 +173,9 @@ export async function handleRequest(req, res) {
       return;
     }
     const parsed = await readJson(req);
-    const username = parsed?.username;
+    const username = typeof parsed?.username === "string" ? parsed.username.trim() : undefined;
     const password = parsed?.password;
-    if (typeof username !== "string" || typeof password !== "string") {
+    if (!username || typeof password !== "string" || !password.trim()) {
       sendJson(res, 400, { ok: false, error: "Invalid payload" });
       return;
     }
@@ -186,8 +197,8 @@ export async function handleRequest(req, res) {
       sendJson(res, 500, { ok: false, error: "JWT_SECRET is required" });
       return;
     }
-    const token = jwt.sign({ sub: username }, jwtSecret, { expiresIn: "1h" });
-    sendJson(res, 200, { ok: true, token });
+    const token = jwt.sign({}, jwtSecret, { subject: username, expiresIn: "1h" });
+    sendJson(res, 200, { ok: true, token }, { "Cache-Control": "no-store" });
     return;
   }
 
@@ -197,9 +208,9 @@ export async function handleRequest(req, res) {
       return;
     }
     const parsed = await readJson(req);
-    const username = parsed?.username;
+    const username = typeof parsed?.username === "string" ? parsed.username.trim() : undefined;
     const password = parsed?.password;
-    if (typeof username !== "string" || typeof password !== "string") {
+    if (!username || typeof password !== "string" || !password.trim()) {
       sendJson(res, 400, { ok: false, error: "Invalid payload" });
       return;
     }
@@ -224,8 +235,8 @@ export async function handleRequest(req, res) {
     }
     const passwordHash = await bcrypt.hash(password, 10);
     USERS.set(username, { username, passwordHash });
-    const token = jwt.sign({ sub: username }, jwtSecret, { expiresIn: "1h" });
-    sendJson(res, 201, { ok: true, token });
+    const token = jwt.sign({}, jwtSecret, { subject: username, expiresIn: "1h" });
+    sendJson(res, 201, { ok: true, token }, { "Cache-Control": "no-store" });
     return;
   }
 
@@ -237,7 +248,9 @@ export function resetUsersForTest() {
     throw new Error("resetUsersForTest is only available in test mode");
   }
   USERS.clear();
-  USERS.set("demo", { username: "demo", passwordHash: DEMO_PASSWORD_HASH });
+  if (ENABLE_DEMO_USER) {
+    USERS.set("demo", { username: "demo", passwordHash: DEMO_PASSWORD_HASH });
+  }
 }
 
 export function createAppServer() {
@@ -250,8 +263,17 @@ export function createAppServer() {
       sendJsonAndClose(req, res, 503, { ok: false, error: "Response timeout" });
     });
 
+    res.once("finish", () => {
+      req.setTimeout(0);
+      res.setTimeout(0);
+    });
+
     handleRequest(req, res).catch((error) => {
       if (res.headersSent || res.writableEnded) {
+        return;
+      }
+
+      if (error?.code === "ERR_REQUEST_ABORTED") {
         return;
       }
 
