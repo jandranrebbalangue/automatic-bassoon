@@ -5,12 +5,13 @@ import jwt from "jsonwebtoken";
 const MAX_BODY_BYTES = 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 10_000;
 const RESPONSE_TIMEOUT_MS = 10_000;
+const DEMO_PASSWORD_HASH = "$2b$10$2RBnPwfH7.sCWK7TAnpho.sgBZeNm42Z7OrPE/fDVPzbjUgR5gt8S";
 const USERS = new Map([
   [
     "demo",
     {
       username: "demo",
-      passwordHash: bcrypt.hashSync("password!1", 10),
+      passwordHash: DEMO_PASSWORD_HASH,
     },
   ],
 ]);
@@ -62,7 +63,7 @@ function readBody(req, { maxBytes = MAX_BODY_BYTES } = {}) {
         );
         return;
       }
-      body += chunk;
+      body += chunk.toString("utf8");
     });
 
     req.on("end", () => {
@@ -187,20 +188,38 @@ export async function handleRequest(req, res) {
   sendJson(res, 404, { ok: false, error: "Not Found" });
 }
 
+export function resetUsersForTest() {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("resetUsersForTest is only available in test mode");
+  }
+  USERS.clear();
+  USERS.set("demo", { username: "demo", passwordHash: DEMO_PASSWORD_HASH });
+}
+
 export function createAppServer() {
   const server = createServer((req, res) => {
+    const closeAfterFinish = () => {
+      if (res.writableEnded) {
+        req.socket.destroy();
+      } else {
+        res.once("finish", () => {
+          req.socket.destroy();
+        });
+      }
+    };
+
     req.setTimeout(REQUEST_TIMEOUT_MS, () => {
       if (!res.headersSent && !res.writableEnded) {
         sendJson(res, 408, { ok: false, error: "Request timeout" });
       }
-      req.socket.destroy();
+      closeAfterFinish();
     });
 
     res.setTimeout(RESPONSE_TIMEOUT_MS, () => {
       if (!res.headersSent && !res.writableEnded) {
         sendJson(res, 503, { ok: false, error: "Response timeout" });
       }
-      req.socket.destroy();
+      closeAfterFinish();
     });
 
     handleRequest(req, res).catch((error) => {

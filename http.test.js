@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
-import { afterAll, beforeAll, expect, test } from "vitest";
-import { createAppServer } from "./server.mjs";
+import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
+import { createAppServer, resetUsersForTest } from "./server.mjs";
 
 let server;
 let baseUrl;
@@ -10,6 +10,7 @@ let previousJwtSecret;
 beforeAll(async () => {
   previousJwtSecret = process.env.JWT_SECRET;
   process.env.JWT_SECRET = TEST_JWT_SECRET;
+  process.env.NODE_ENV = "test";
   server = createAppServer();
   await new Promise((resolve) => {
     server.listen(0, "127.0.0.1", resolve);
@@ -27,6 +28,11 @@ afterAll(async () => {
   } else {
     process.env.JWT_SECRET = previousJwtSecret;
   }
+  delete process.env.NODE_ENV;
+});
+
+beforeEach(() => {
+  resetUsersForTest();
 });
 
 test("GET /health returns ok", async () => {
