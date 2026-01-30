@@ -53,7 +53,17 @@ function sendJson(res, status, body, headers = {}) {
 }
 
 function sendJsonAndClose(req, res, status, body) {
-  if (res.writableFinished || res.headersSent) {
+  if (res.writableFinished) {
+    req.socket.destroy();
+    return;
+  }
+  if (res.writableEnded) {
+    res.once("finish", () => {
+      req.socket.destroy();
+    });
+    return;
+  }
+  if (res.headersSent) {
     req.socket.destroy();
     return;
   }
@@ -267,6 +277,7 @@ export function createAppServer() {
 
     handleRequest(req, res).catch((error) => {
       if (res.headersSent || res.writableEnded) {
+        req.socket.destroy();
         return;
       }
 
