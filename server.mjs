@@ -5,7 +5,8 @@ import jwt from "jsonwebtoken";
 const MAX_BODY_BYTES = 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 10_000;
 const RESPONSE_TIMEOUT_MS = 10_000;
-const DEMO_PASSWORD_HASH = "$2b$10$2RBnPwfH7.sCWK7TAnpho.sgBZeNm42Z7OrPE/fDVPzbjUgR5gt8S";
+const DEMO_PASSWORD_HASH = "$2b$10$aS8QSU5vNDxVb3evy75RMekzrTz8G5IHBxge8lcVfH0F7EDVyNEaG";
+
 const USERS = new Map([
   [
     "demo",
@@ -41,6 +42,10 @@ function sendJson(res, status, body, headers = {}) {
 }
 
 function sendJsonAndClose(req, res, status, body) {
+  if (res.writableFinished) {
+    req.socket.destroy();
+    return;
+  }
   res.once("finish", () => {
     req.socket.destroy();
   });
@@ -60,11 +65,16 @@ function readBody(req, { maxBytes = MAX_BODY_BYTES } = {}) {
     let body = "";
     let size = 0;
     let aborted = false;
-
+    const onAborted = () => {
+      aborted = true;
+      cleanup();
+      reject(new Error("Request aborted"));
+    };
     const cleanup = () => {
       req.off("data", onData);
       req.off("end", onEnd);
       req.off("error", onError);
+      req.off("aborted", onAborted);
     };
 
     const onData = (chunk) => {
@@ -98,9 +108,12 @@ function readBody(req, { maxBytes = MAX_BODY_BYTES } = {}) {
       reject(error);
     };
 
+
+
     req.on("data", onData);
     req.on("end", onEnd);
     req.on("error", onError);
+    req.on("aborted", onAborted);
   });
 }
 
@@ -242,7 +255,7 @@ export function createAppServer() {
         return;
       }
 
-      if (error && typeof error === "object" && "status" in error) {
+      if (error instanceof HttpError) {
         if (error.status === 413) {
           sendJsonAndClose(
             req,
