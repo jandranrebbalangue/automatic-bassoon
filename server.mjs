@@ -37,6 +37,15 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+function sendJsonAndClose(req, res, status, body) {
+  res.once("finish", () => {
+    req.socket.destroy();
+  });
+  if (!res.headersSent && !res.writableEnded) {
+    sendJson(res, status, body);
+  }
+}
+
 function isJsonRequest(req) {
   const contentType = req.headers["content-type"] ?? "";
   const type = contentType.split(";", 1)[0].trim().toLowerCase();
@@ -49,7 +58,13 @@ function readBody(req, { maxBytes = MAX_BODY_BYTES } = {}) {
     let size = 0;
     let aborted = false;
 
-    req.on("data", (chunk) => {
+    const cleanup = () => {
+      req.off("data", onData);
+      req.off("end", onEnd);
+      req.off("error", onError);
+    };
+
+    const onData = (chunk) => {
       if (aborted) {
         return;
       }
@@ -58,24 +73,31 @@ function readBody(req, { maxBytes = MAX_BODY_BYTES } = {}) {
       if (size > maxBytes) {
         aborted = true;
         req.pause();
+        cleanup();
         reject(
           new HttpError(413, { ok: false, error: "Payload too large" }, "Payload too large")
         );
         return;
       }
       body += chunk.toString("utf8");
-    });
+    };
 
-    req.on("end", () => {
+    const onEnd = () => {
       if (aborted) {
         return;
       }
+      cleanup();
       resolve(body);
-    });
+    };
 
-    req.on("error", (error) => {
+    const onError = (error) => {
+      cleanup();
       reject(error);
-    });
+    };
+
+    req.on("data", onData);
+    req.on("end", onEnd);
+    req.on("error", onError);
   });
 }
 
@@ -205,21 +227,11 @@ export function resetUsersForTest() {
 export function createAppServer() {
   const server = createServer((req, res) => {
     req.setTimeout(REQUEST_TIMEOUT_MS, () => {
-      if (!res.headersSent && !res.writableEnded) {
-        sendJson(res, 408, { ok: false, error: "Request timeout" });
-        res.once("finish", () => {
-          req.socket.destroy();
-        });
-      }
+      sendJsonAndClose(req, res, 408, { ok: false, error: "Request timeout" });
     });
 
     res.setTimeout(RESPONSE_TIMEOUT_MS, () => {
-      if (!res.headersSent && !res.writableEnded) {
-        sendJson(res, 503, { ok: false, error: "Response timeout" });
-        res.once("finish", () => {
-          req.socket.destroy();
-        });
-      }
+      sendJsonAndClose(req, res, 503, { ok: false, error: "Response timeout" });
     });
 
     handleRequest(req, res).catch((error) => {
@@ -228,12 +240,16 @@ export function createAppServer() {
       }
 
       if (error && typeof error === "object" && "status" in error) {
-        sendJson(res, error.status, error.body ?? { ok: false, error: "Request failed" });
         if (error.status === 413) {
-          res.on("finish", () => {
-            req.socket.destroy();
-          });
+          sendJsonAndClose(
+            req,
+            res,
+            error.status,
+            error.body ?? { ok: false, error: "Request failed" }
+          );
+          return;
         }
+        sendJson(res, error.status, error.body ?? { ok: false, error: "Request failed" });
         return;
       }
 
