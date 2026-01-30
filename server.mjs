@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
+const MAX_BODY_BYTES = 1024 * 1024;
 const USERS = new Map([
 	[
 		"demo",
@@ -20,161 +21,174 @@ function isStrongPassword(password) {
 	);
 }
 
-export function handleRequest(req, res) {
+function sendJson(res, status, body) {
+	res.writeHead(status, { "Content-Type": "application/json" });
+	res.end(JSON.stringify(body));
+}
+
+function isJsonRequest(req) {
+	const contentType = req.headers["content-type"] ?? "";
+	return contentType.toLowerCase().includes("application/json");
+}
+
+function readBody(req, { maxBytes = MAX_BODY_BYTES } = {}) {
+	return new Promise((resolve, reject) => {
+		let body = "";
+		let size = 0;
+
+		req.on("data", (chunk) => {
+			size += chunk.length;
+			if (size > maxBytes) {
+				req.destroy();
+				reject({
+					status: 413,
+					body: { ok: false, error: "Payload too large" },
+				});
+				return;
+			}
+			body += chunk;
+		});
+
+		req.on("end", () => {
+			resolve(body);
+		});
+
+		req.on("error", (error) => {
+			reject(error);
+		});
+	});
+}
+
+async function readJson(req, options) {
+	const body = await readBody(req, options);
+	if (!body) {
+		return null;
+	}
+
+	try {
+		return JSON.parse(body);
+	} catch {
+		throw { status: 400, body: { ok: false, error: "Invalid JSON" } };
+	}
+}
+
+export async function handleRequest(req, res) {
+	const method = req.method ?? "GET";
+	const rawUrl = req.url ?? "/";
+	const path = rawUrl.split("?", 1)[0].replace(/[\r\n]/g, "");
+
 	if (process.env.DEBUG_REQUESTS === "1") {
-		const path = (req.url ?? "/").split("?", 1)[0].replace(/[\r\n]/g, "");
 		console.log("request", { method: req.method ?? "UNKNOWN", path });
 	}
 
-	const method = req.method ?? "GET";
-	const path = (req.url ?? "/").split("?", 1)[0].replace(/[\r\n]/g, "");
-
 	if (method === "GET" && path === "/health") {
-		res.writeHead(200, { "Content-Type": "application/json" });
-		res.end(JSON.stringify({ status: "ok" }));
+		sendJson(res, 200, { status: "ok" });
 		return;
 	}
 
 	if (method === "POST" && path === "/echo") {
-		let body = "";
-		req.on("data", (chunk) => {
-			body += chunk;
-		});
-		req.on("end", () => {
-			let parsed = null;
-			let isJson = false;
-			if (body) {
-				try {
-					parsed = JSON.parse(body);
-					isJson = true;
-				} catch {
-					parsed = body;
-				}
-			}
+		if (isJsonRequest(req)) {
+			const payload = await readJson(req);
+			sendJson(res, 200, { ok: true, data: payload });
+			return;
+		}
 
-			if (isJson) {
-				res.writeHead(200, { "Content-Type": "application/json" });
-				res.end(JSON.stringify({ ok: true, data: parsed }));
-				return;
-			}
-
-			res.writeHead(200, { "Content-Type": "text/plain" });
-			res.end(String(parsed ?? ""));
-		});
+		const body = await readBody(req);
+		sendJson(res, 200, { ok: true, data: body });
 		return;
 	}
 
 	if (method === "POST" && path === "/login") {
-		let body = "";
-		req.on("data", (chunk) => {
-			body += chunk;
-		});
-		req.on("end", () => {
-			let parsed = null;
-			if (body) {
-				try {
-					parsed = JSON.parse(body);
-				} catch {
-					parsed = null;
-				}
-			}
+		const parsed = await readJson(req);
+		const username = parsed?.username;
+		const password = parsed?.password;
+		if (typeof username !== "string" || typeof password !== "string") {
+			sendJson(res, 400, { ok: false, error: "Invalid payload" });
+			return;
+		}
 
-			const username = parsed?.username;
-			const password = parsed?.password;
-			if (typeof username !== "string" || typeof password !== "string") {
-				res.writeHead(400, { "Content-Type": "application/json" });
-				res.end(JSON.stringify({ ok: false, error: "Invalid payload" }));
-				return;
-			}
+		if (!isStrongPassword(password)) {
+			sendJson(res, 400, {
+				ok: false,
+				error: "Password must be at least 8 characters and include a number and a special character",
+			});
+			return;
+		}
 
-			if (!isStrongPassword(password)) {
-				res.writeHead(400, { "Content-Type": "application/json" });
-				res.end(
-					JSON.stringify({
-						ok: false,
-						error: "Password must be at least 8 characters and include a number and a special character",
-					})
-				);
-				return;
-			}
+		const user = USERS.get(username);
+		if (!user) {
+			sendJson(res, 401, { ok: false, error: "Unauthorized" });
+			return;
+		}
 
-			const user = USERS.get(username);
-			if (!user) {
-				res.writeHead(401, { "Content-Type": "application/json" });
-				res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
-				return;
-			}
+		const isValidUser =
+			username === user.username &&
+			(await bcrypt.compare(password, user.passwordHash));
+		if (!isValidUser) {
+			sendJson(res, 401, { ok: false, error: "Unauthorized" });
+			return;
+		}
 
-			const isValidUser =
-				username === user.username && bcrypt.compareSync(password, user.passwordHash);
-			if (!isValidUser) {
-				res.writeHead(401, { "Content-Type": "application/json" });
-				res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
-				return;
-			}
-
-			const jwtSecret = process.env.JWT_SECRET ?? "dev-secret";
-			const token = jwt.sign({ sub: username }, jwtSecret, { expiresIn: "1h" });
-			res.writeHead(200, { "Content-Type": "application/json" });
-			res.end(JSON.stringify({ ok: true, token }));
-		});
+		const jwtSecret = process.env.JWT_SECRET;
+		if (!jwtSecret) {
+			sendJson(res, 500, { ok: false, error: "JWT_SECRET is required" });
+			return;
+		}
+		const token = jwt.sign({ sub: username }, jwtSecret, { expiresIn: "1h" });
+		sendJson(res, 200, { ok: true, token });
 		return;
 	}
 
 	if (method === "POST" && path === "/signup") {
-		let body = "";
-		req.on("data", (chunk) => {
-			body += chunk;
-		});
-		req.on("end", () => {
-			let parsed = null;
-			if (body) {
-				try {
-					parsed = JSON.parse(body);
-				} catch {
-					parsed = null;
-				}
-			}
+		const parsed = await readJson(req);
+		const username = parsed?.username;
+		const password = parsed?.password;
+		if (typeof username !== "string" || typeof password !== "string") {
+			sendJson(res, 400, { ok: false, error: "Invalid payload" });
+			return;
+		}
 
-			const username = parsed?.username;
-			const password = parsed?.password;
-			if (typeof username !== "string" || typeof password !== "string") {
-				res.writeHead(400, { "Content-Type": "application/json" });
-				res.end(JSON.stringify({ ok: false, error: "Invalid payload" }));
-				return;
-			}
+		if (!isStrongPassword(password)) {
+			sendJson(res, 400, {
+				ok: false,
+				error: "Password must be at least 8 characters and include a number and a special character",
+			});
+			return;
+		}
 
-			if (!isStrongPassword(password)) {
-				res.writeHead(400, { "Content-Type": "application/json" });
-				res.end(
-					JSON.stringify({
-						ok: false,
-						error: "Password must be at least 8 characters and include a number and a special character",
-					})
-				);
-				return;
-			}
+		if (USERS.has(username)) {
+			sendJson(res, 409, { ok: false, error: "User already exists" });
+			return;
+		}
 
-			if (USERS.has(username)) {
-				res.writeHead(409, { "Content-Type": "application/json" });
-				res.end(JSON.stringify({ ok: false, error: "User already exists" }));
-				return;
-			}
-
-			const passwordHash = bcrypt.hashSync(password, 10);
-			USERS.set(username, { username, passwordHash });
-			const jwtSecret = process.env.JWT_SECRET ?? "dev-secret";
-			const token = jwt.sign({ sub: username }, jwtSecret, { expiresIn: "1h" });
-			res.writeHead(201, { "Content-Type": "application/json" });
-			res.end(JSON.stringify({ ok: true, token }));
-		});
+		const passwordHash = await bcrypt.hash(password, 10);
+		USERS.set(username, { username, passwordHash });
+		const jwtSecret = process.env.JWT_SECRET;
+		if (!jwtSecret) {
+			sendJson(res, 500, { ok: false, error: "JWT_SECRET is required" });
+			return;
+		}
+		const token = jwt.sign({ sub: username }, jwtSecret, { expiresIn: "1h" });
+		sendJson(res, 201, { ok: true, token });
 		return;
 	}
 
-	res.writeHead(200, { "Content-Type": "text/plain" });
-	res.end("Hello World!\n");
+	sendJson(res, 404, { ok: false, error: "Not Found" });
 }
 
 export function createAppServer() {
-	return createServer(handleRequest);
+	return createServer((req, res) => {
+		handleRequest(req, res).catch((error) => {
+			if (res.headersSent || res.writableEnded) {
+				return;
+			}
+
+			if (error && typeof error === "object" && "status" in error) {
+				sendJson(res, error.status, error.body ?? { ok: false, error: "Request failed" });
+				return;
+			}
+
+			sendJson(res, 500, { ok: false, error: "Internal Server Error" });
+		});
+	});
 }
