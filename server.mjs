@@ -119,6 +119,10 @@ export async function handleRequest(req, res) {
   }
 
   if (method === "POST" && path === "/login") {
+    if (!isJsonRequest(req)) {
+      sendJson(res, 415, { ok: false, error: "Expected application/json" });
+      return;
+    }
     const parsed = await readJson(req);
     const username = parsed?.username;
     const password = parsed?.password;
@@ -133,9 +137,7 @@ export async function handleRequest(req, res) {
       return;
     }
 
-    const isValidUser =
-      username === user.username &&
-      (await bcrypt.compare(password, user.passwordHash));
+    const isValidUser = await bcrypt.compare(password, user.passwordHash);
     if (!isValidUser) {
       sendJson(res, 401, { ok: false, error: "Unauthorized" });
       return;
@@ -152,6 +154,10 @@ export async function handleRequest(req, res) {
   }
 
   if (method === "POST" && path === "/signup") {
+    if (!isJsonRequest(req)) {
+      sendJson(res, 415, { ok: false, error: "Expected application/json" });
+      return;
+    }
     const parsed = await readJson(req);
     const username = parsed?.username;
     const password = parsed?.password;
@@ -173,13 +179,13 @@ export async function handleRequest(req, res) {
       return;
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    USERS.set(username, { username, passwordHash });
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
       sendJson(res, 500, { ok: false, error: "JWT_SECRET is required" });
       return;
     }
+    const passwordHash = await bcrypt.hash(password, 10);
+    USERS.set(username, { username, passwordHash });
     const token = jwt.sign({ sub: username }, jwtSecret, { expiresIn: "1h" });
     sendJson(res, 201, { ok: true, token });
     return;
@@ -198,28 +204,22 @@ export function resetUsersForTest() {
 
 export function createAppServer() {
   const server = createServer((req, res) => {
-    const closeAfterFinish = () => {
-      if (res.writableEnded) {
-        req.socket.destroy();
-      } else {
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      if (!res.headersSent && !res.writableEnded) {
+        sendJson(res, 408, { ok: false, error: "Request timeout" });
         res.once("finish", () => {
           req.socket.destroy();
         });
       }
-    };
-
-    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
-      if (!res.headersSent && !res.writableEnded) {
-        sendJson(res, 408, { ok: false, error: "Request timeout" });
-      }
-      closeAfterFinish();
     });
 
     res.setTimeout(RESPONSE_TIMEOUT_MS, () => {
       if (!res.headersSent && !res.writableEnded) {
         sendJson(res, 503, { ok: false, error: "Response timeout" });
+        res.once("finish", () => {
+          req.socket.destroy();
+        });
       }
-      closeAfterFinish();
     });
 
     handleRequest(req, res).catch((error) => {

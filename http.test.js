@@ -6,10 +6,12 @@ let server;
 let baseUrl;
 const TEST_JWT_SECRET = "test-secret";
 let previousJwtSecret;
+let previousNodeEnv;
 
 beforeAll(async () => {
   previousJwtSecret = process.env.JWT_SECRET;
   process.env.JWT_SECRET = TEST_JWT_SECRET;
+  previousNodeEnv = process.env.NODE_ENV;
   process.env.NODE_ENV = "test";
   server = createAppServer();
   await new Promise((resolve) => {
@@ -28,7 +30,11 @@ afterAll(async () => {
   } else {
     process.env.JWT_SECRET = previousJwtSecret;
   }
-  delete process.env.NODE_ENV;
+  if (previousNodeEnv === undefined) {
+    delete process.env.NODE_ENV;
+  } else {
+    process.env.NODE_ENV = previousNodeEnv;
+  }
 });
 
 beforeEach(() => {
@@ -100,6 +106,17 @@ test("POST /login rejects invalid payload", async () => {
   expect(response.status).toBe(400);
   const body = await response.json();
   expect(body).toEqual({ ok: false, error: "Invalid payload" });
+});
+
+test("POST /login rejects empty JSON body", async () => {
+  const response = await fetch(`${baseUrl}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "",
+  });
+  expect(response.status).toBe(400);
+  const body = await response.json();
+  expect(body).toEqual({ ok: false, error: "Empty JSON body" });
 });
 
 test("POST /login rejects wrong credentials", async () => {
