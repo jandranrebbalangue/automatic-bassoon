@@ -119,6 +119,17 @@ test("POST /login rejects empty JSON body", async () => {
   expect(body).toEqual({ ok: false, error: "Empty JSON body" });
 });
 
+test("POST /login rejects non-json content type", async () => {
+  const response = await fetch(`${baseUrl}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: "username=demo&password=password!1",
+  });
+  expect(response.status).toBe(415);
+  const body = await response.json();
+  expect(body).toEqual({ ok: false, error: "Expected application/json" });
+});
+
 test("POST /login rejects wrong credentials", async () => {
   const response = await fetch(`${baseUrl}/login`, {
     method: "POST",
@@ -174,6 +185,17 @@ test("POST /signup rejects weak password", async () => {
     ok: false,
     error: "Password must be at least 8 characters and include a number and a special character",
   });
+});
+
+test("POST /signup rejects non-json content type", async () => {
+  const response = await fetch(`${baseUrl}/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: "username=plain&password=secret!1",
+  });
+  expect(response.status).toBe(415);
+  const body = await response.json();
+  expect(body).toEqual({ ok: false, error: "Expected application/json" });
 });
 
 test("GET /missing returns 404", async () => {

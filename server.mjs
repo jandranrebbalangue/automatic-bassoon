@@ -32,8 +32,11 @@ function isStrongPassword(password) {
   );
 }
 
-function sendJson(res, status, body) {
-  res.writeHead(status, { "Content-Type": "application/json" });
+function sendJson(res, status, body, headers = {}) {
+  if (res.headersSent) {
+    return;
+  }
+  res.writeHead(status, { "Content-Type": "application/json", ...headers });
   res.end(JSON.stringify(body));
 }
 
@@ -42,7 +45,7 @@ function sendJsonAndClose(req, res, status, body) {
     req.socket.destroy();
   });
   if (!res.headersSent && !res.writableEnded) {
-    sendJson(res, status, body);
+    sendJson(res, status, body, { Connection: "close" });
   }
 }
 
@@ -103,7 +106,7 @@ function readBody(req, { maxBytes = MAX_BODY_BYTES } = {}) {
 
 async function readJson(req, options) {
   const body = await readBody(req, options);
-  if (!body) {
+  if (!body || !body.trim()) {
     throw new HttpError(400, { ok: false, error: "Empty JSON body" }, "Empty JSON body");
   }
 
