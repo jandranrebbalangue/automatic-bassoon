@@ -6,21 +6,20 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 10_000;
 const RESPONSE_TIMEOUT_MS = 10_000;
 const DEMO_PASSWORD_HASH = "$2b$10$aS8QSU5vNDxVb3evy75RMekzrTz8G5IHBxge8lcVfH0F7EDVyNEaG";
-const ENABLE_DEMO_USER = process.env.NODE_ENV !== "production";
+const USERS = new Map();
 
-const USERS = new Map(
-  ENABLE_DEMO_USER
-    ? [
-        [
-          "demo",
-          {
-            username: "demo",
-            passwordHash: DEMO_PASSWORD_HASH,
-          },
-        ],
-      ]
-    : []
-);
+function isDemoUserEnabled() {
+  return process.env.NODE_ENV !== "production";
+}
+
+function seedDemoUser() {
+  if (!isDemoUserEnabled()) {
+    return;
+  }
+  USERS.set("demo", { username: "demo", passwordHash: DEMO_PASSWORD_HASH });
+}
+
+seedDemoUser();
 
 class HttpError extends Error {
   constructor(status, body, message) {
@@ -248,9 +247,7 @@ export function resetUsersForTest() {
     throw new Error("resetUsersForTest is only available in test mode");
   }
   USERS.clear();
-  if (ENABLE_DEMO_USER) {
-    USERS.set("demo", { username: "demo", passwordHash: DEMO_PASSWORD_HASH });
-  }
+  seedDemoUser();
 }
 
 export function createAppServer() {
