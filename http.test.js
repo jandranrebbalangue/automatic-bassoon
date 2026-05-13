@@ -143,6 +143,19 @@ test("POST /login rejects wrong credentials", async () => {
   expect(body).toEqual({ ok: false, error: "Unauthorized" });
 });
 
+test("POST /login trims username and password", async () => {
+  const response = await fetch(`${baseUrl}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "  demo  ", password: `  ${TEST_DEMO_PASSWORD}  ` }),
+  });
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.ok).toBe(true);
+  const payload = jwt.verify(body.token, TEST_JWT_SECRET);
+  expect(payload.sub).toBe("demo");
+});
+
 test("POST /signup creates user and returns token", async () => {
   const response = await fetch(`${baseUrl}/signup`, {
     method: "POST",
@@ -198,6 +211,41 @@ test("POST /signup rejects non-json content type", async () => {
   expect(response.status).toBe(415);
   const body = await response.json();
   expect(body).toEqual({ ok: false, error: "Expected application/json" });
+});
+
+test("POST /signup trims username and password", async () => {
+  const response = await fetch(`${baseUrl}/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "  spaced-user  ", password: `  ${TEST_SIGNUP_PASSWORD}  ` }),
+  });
+  expect(response.status).toBe(201);
+  const body = await response.json();
+  expect(body.ok).toBe(true);
+  const payload = jwt.verify(body.token, TEST_JWT_SECRET);
+  expect(payload.sub).toBe("spaced-user");
+});
+
+test("POST /bryan returns first and last name", async () => {
+  const response = await fetch(`${baseUrl}/bryan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ firstName: "  Bryan ", lastName: "  Smith  " }),
+  });
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body).toEqual({ ok: true, data: { firstName: "Bryan", lastName: "Smith" } });
+});
+
+test("POST /bryan rejects invalid payload", async () => {
+  const response = await fetch(`${baseUrl}/bryan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ firstName: "Bryan" }),
+  });
+  expect(response.status).toBe(400);
+  const body = await response.json();
+  expect(body).toEqual({ ok: false, error: "Invalid payload" });
 });
 
 test("GET /missing returns 404", async () => {

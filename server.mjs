@@ -183,21 +183,21 @@ export async function handleRequest(req, res) {
     }
     const parsed = await readJson(req);
     const username = typeof parsed?.username === "string" ? parsed.username.trim() : undefined;
-    const password = parsed?.password;
-    if (!username || typeof password !== "string" || !password.trim()) {
+    const password = typeof parsed?.password === "string" ? parsed.password.trim() : undefined;
+    if (!username || !password) {
       sendJson(res, 400, { ok: false, error: "Invalid payload" });
       return;
     }
 
     const user = USERS.get(username);
     if (!user) {
-      sendJson(res, 401, { ok: false, error: "Unauthorized" });
+      sendJson(res, 401, { ok: false, error: "Unauthorized" }, { "WWW-Authenticate": "Bearer" });
       return;
     }
 
     const isValidUser = await bcrypt.compare(password, user.passwordHash);
     if (!isValidUser) {
-      sendJson(res, 401, { ok: false, error: "Unauthorized" });
+      sendJson(res, 401, { ok: false, error: "Unauthorized" }, { "WWW-Authenticate": "Bearer" });
       return;
     }
 
@@ -218,8 +218,8 @@ export async function handleRequest(req, res) {
     }
     const parsed = await readJson(req);
     const username = typeof parsed?.username === "string" ? parsed.username.trim() : undefined;
-    const password = parsed?.password;
-    if (!username || typeof password !== "string" || !password.trim()) {
+    const password = typeof parsed?.password === "string" ? parsed.password.trim() : undefined;
+    if (!username || !password) {
       sendJson(res, 400, { ok: false, error: "Invalid payload" });
       return;
     }
@@ -246,6 +246,22 @@ export async function handleRequest(req, res) {
     USERS.set(username, { username, passwordHash });
     const token = jwt.sign({}, jwtSecret, { subject: username, expiresIn: "1h" });
     sendJson(res, 201, { ok: true, token }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (method === "POST" && path === "/bryan") {
+    if (!isJsonRequest(req)) {
+      sendJson(res, 415, { ok: false, error: "Expected application/json" });
+      return;
+    }
+    const parsed = await readJson(req);
+    const firstName = typeof parsed?.firstName === "string" ? parsed.firstName.trim() : undefined;
+    const lastName = typeof parsed?.lastName === "string" ? parsed.lastName.trim() : undefined;
+    if (!firstName || !lastName) {
+      sendJson(res, 400, { ok: false, error: "Invalid payload" });
+      return;
+    }
+    sendJson(res, 200, { ok: true, data: { firstName, lastName } });
     return;
   }
 
