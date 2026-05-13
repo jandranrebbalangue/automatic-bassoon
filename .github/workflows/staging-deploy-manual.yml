@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Deploy selected branch to staging
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
