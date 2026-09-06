@@ -10,7 +10,7 @@
 	"keywords": [],
 	"author": "",
 	"license": "ISC",
-	"packageManager": "pnpm@10.11.0",
+	"packageManager": "pnpm@12.3.4",
 	"devDependencies": {
 		"vitest": "^3.2.4"
 	},
